@@ -1,0 +1,172 @@
+name: Verify and package
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish verified images to GHCR (main branch only)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [h2, postgres]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: plastiflow_test
+          POSTGRES_USER: plastiflow_test
+          POSTGRES_PASSWORD: disposable-ci-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U plastiflow_test -d plastiflow_test'
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Verify backend
+        env:
+          TEST_DATABASE: ${{ matrix.database }}
+        run: |
+          if [ "$TEST_DATABASE" = postgres ]; then
+            mvn -B -ntp verify -Dspring.datasource.url=jdbc:postgresql://localhost:5432/plastiflow_test -Dspring.datasource.username=plastiflow_test -Dspring.datasource.password=disposable-ci-password
+          else
+            mvn -B -ntp verify
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: backend-${{ matrix.database }}-results
+          path: target/surefire-reports/*.xml
+  client-and-acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install and verify frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          npm run build
+          npx playwright install --with-deps chromium
+      - name: Verify offline device bridge
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Compile disposable acceptance API
+        run: mvn -B -ntp test-compile dependency:build-classpath -Dmdep.outputFile=target/test-classpath.txt -Dmdep.includeScope=test
+      - name: Browser workflows and HTTP acceptance
+        run: |
+          python3 scripts/run_acceptance.py --browser
+          python3 scripts/run_acceptance.py --demo
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: browser-and-acceptance-results
+          path: |
+            frontend/playwright-report/
+            acceptance-results/
+          retention-days: 7
+  image-builds:
+    needs: [backend, client-and-acceptance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Validate demo Compose wiring
+        run: |
+          python3 scripts/prepare_demo_env.py
+          docker compose config --quiet
+          docker compose --env-file .env.production.example -f compose.production.yaml config --quiet
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: plastiflow-api:ci
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: frontend
+          push: false
+          load: true
+          tags: plastiflow-frontend:ci
+      - name: Start PostgreSQL and verified containers
+        run: docker compose -f compose.yaml -f compose.ci.yaml up --no-build --wait --wait-timeout 180
+      - name: Exercise packaged API and frontend proxy
+        run: |
+          curl --fail --silent http://127.0.0.1:8081/actuator/health
+          curl --fail --silent --output /dev/null http://127.0.0.1:8081/
+          set -a
+          source .env
+          set +a
+          python3 scripts/demo_integration.py
+      - name: Capture container diagnostics
+        if: failure()
+        run: docker compose -f compose.yaml -f compose.ci.yaml logs --no-color
+      - name: Remove disposable CI containers and database
+        if: always()
+        run: docker compose -f compose.yaml -f compose.ci.yaml down --volumes
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    needs: [image-builds]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Set lowercase image namespace
+        id: names
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "base=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.names.outputs.base }}-api:${{ github.sha }}
+          provenance: true
+          sbom: true
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: frontend
+          push: true
+          tags: ${{ steps.names.outputs.base }}-frontend:${{ github.sha }}
+          provenance: true
+          sbom: true

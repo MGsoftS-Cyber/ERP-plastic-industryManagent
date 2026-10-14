@@ -1,0 +1,8 @@
+# Disposable CI only: use images built and loaded by the verification job.
+services:
+  api:
+    image: plastiflow-api:ci
+    pull_policy: never
+  frontend:
+    image: plastiflow-frontend:ci
+    pull_policy: never

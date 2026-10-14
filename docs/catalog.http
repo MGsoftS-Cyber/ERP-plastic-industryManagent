@@ -1,0 +1,31 @@
+# VS Code REST Client or IntelliJ HTTP client.
+# Fill in local demonstration credentials. Do not commit real passwords.
+@base = http://localhost:8080
+@managerPassword = REPLACE_LOCALLY
+@readerPassword = REPLACE_LOCALLY
+@productId = REPLACE_WITH_CREATED_UUID
+
+### Health
+GET {{base}}/actuator/health
+
+### Create (201)
+POST {{base}}/api/v1/products
+Authorization: Basic manager {{managerPassword}}
+Content-Type: application/json
+
+{"sku":"PP-NAT-001","name":"Natural polypropylene resin","kind":"RAW_MATERIAL","unit":"KG"}
+
+### Read filtered catalog (200)
+GET {{base}}/api/v1/products?q=polypropylene&kind=RAW_MATERIAL&active=true&page=0&size=20
+Authorization: Basic reader {{readerPassword}}
+
+### Read one product (200)
+GET {{base}}/api/v1/products/{{productId}}
+Authorization: Basic reader {{readerPassword}}
+
+### Rename and deactivate; use actual last-read version (200 or stale 409)
+PUT {{base}}/api/v1/products/{{productId}}
+Authorization: Basic manager {{managerPassword}}
+Content-Type: application/json
+
+{"version":0,"name":"Natural polypropylene resin — archived","active":false}

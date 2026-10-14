@@ -1,0 +1,43 @@
+# Validated image references must be supplied; TLS terminates at your deployment reverse proxy.
+services:
+  database:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: plastiflow
+      POSTGRES_USER: plastiflow
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes: [database-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U plastiflow -d plastiflow]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    image: ${API_IMAGE:?Set verified API image digest or commit tag}
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    environment:
+      SPRING_PROFILES_ACTIVE: production
+      DB_URL: jdbc:postgresql://database:5432/plastiflow
+      DB_USERNAME: plastiflow
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      OIDC_ISSUER_URI: ${OIDC_ISSUER_URI:?Set trusted issuer URI}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-plastiflow-api}
+      PLASTIFLOW_AI_ENABLED: ${PLASTIFLOW_AI_ENABLED:-false}
+      PLASTIFLOW_AI_MODEL: ${PLASTIFLOW_AI_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      database: {condition: service_healthy}
+  frontend:
+    image: ${FRONTEND_IMAGE:?Set verified frontend image digest or commit tag}
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    ports: ['127.0.0.1:8081:8080']
+    depends_on:
+      api: {condition: service_healthy}
+volumes:
+  database-data:

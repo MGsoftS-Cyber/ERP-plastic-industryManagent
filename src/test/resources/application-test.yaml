@@ -1,0 +1,34 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:plastiflow;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+CATALOG_MANAGER_PASSWORD: integration-manager-password
+CATALOG_READER_PASSWORD: integration-reader-password
+
+PRODUCTION_PASSWORD: integration-production-password
+QUALITY_PASSWORD: integration-quality-password
+WORKFORCE_PASSWORD: integration-workforce-password
+OPERATOR_PASSWORD: integration-operator-password
+
+MAINTENANCE_PASSWORD: integration-maintenance-password
+TECHNICIAN_PASSWORD: integration-technician-password
+FACILITIES_PASSWORD: integration-facilities-password
+LOGISTICS_PASSWORD: integration-logistics-password
+SECURITY_PASSWORD: integration-security-password
+GATE_PASSWORD: integration-gate-password
+
+PAYROLL_PASSWORD: integration-payroll-password
+PAYROLL_APPROVER_PASSWORD: integration-payroll_approver-password
+
+ACCOUNTANT_PASSWORD: integration-accountant-password
+FINANCE_PASSWORD: integration-finance-password
+FINANCE_APPROVER_PASSWORD: integration-finance_approver-password
+
+INTEGRATION_PASSWORD: integration-integration-password
+REPORTS_PASSWORD: integration-reports-password
+DEVICE_PASSWORD: integration-device-password
+CUSTOMER_PASSWORD: integration-customer-password
+CUSTOMER2_PASSWORD: integration-customer2-password
+SUPPLIER_PASSWORD: integration-supplier-password
+PLASTIFLOW_AI_ENABLED: false

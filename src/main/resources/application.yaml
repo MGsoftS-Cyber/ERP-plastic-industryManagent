@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: plastiflow
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/plastiflow}
+    username: ${DB_USERNAME:plastiflow}
+    password: ${DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+server:
+  error:
+    include-message: never
+    include-stacktrace: never
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+---
+spring:
+  config:
+    activate:
+      on-profile: "!demo"
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OIDC_ISSUER_URI}
+          audiences: ${OIDC_AUDIENCE:plastiflow-api}
