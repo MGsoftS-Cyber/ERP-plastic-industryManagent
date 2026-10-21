@@ -4,7 +4,7 @@ COPY pom.xml .
 COPY src src
 COPY scripts scripts
 RUN mvn -B -ntp verify
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 RUN groupadd --system plastiflow && useradd --system --gid plastiflow plastiflow
 COPY --from=build /build/target/plastiflow.jar app.jar
